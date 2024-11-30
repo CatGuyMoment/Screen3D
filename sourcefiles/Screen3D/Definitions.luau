@@ -7,6 +7,7 @@ export type screen3D = typeof(
 			rootOffset : CFrame
 
 		}, 
+		
 		{} :: screenGen
 	)
 )
@@ -26,18 +27,12 @@ export type component3D = typeof(
 			offset : CFrame,
 			viewportSize : Vector2,
 
-			
 			conn : RBXScriptConnection?
-		}, 
+		},
+		
 		{} :: componentGen
 	)
 )
-
-
-
-
-
-
 
 export type screenGen = {
 	__index : screenGen,
@@ -49,7 +44,6 @@ export type screenGen = {
 	GetInsetCanvasSize : (screen3D) -> Vector2,
 	GetIntendedCanvasSize : (screen3D) -> Vector2,
 	GetInset: (screen3D) -> Vector2
-
 }
 
 export type componentGen = {
@@ -61,18 +55,12 @@ export type componentGen = {
 	
 	RecomputeParent : (component3D) -> (),
 	
-	
 	GetStudsScreenSize : (component3D, viewportSize : Vector2) -> Vector3,
 	ReadWorldCFrame: (component3D) -> (CFrame),
 	UDim2ToCFrame : (component3D, position2D : UDim2) -> CFrame,
 	--AbsoluteUDim2ToCFrame : (component3D, position2D : UDim2) -> CFrame,
 	
 	GetViewportSize : (component3D) -> Vector2
-
-
 }
-
-
-
 
 return nil
