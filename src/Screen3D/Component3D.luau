@@ -10,29 +10,15 @@ local function pivot(original: CFrame, pivot: CFrame, angle: CFrame)
 	return original:Inverse() * pivot * angle * pivot:Inverse() * original
 end
 
-
-local function scaleOffFOV(original: CFrame)
-	local rx,ry,rz = original:ToOrientation() --fuck gimbal lock
-
-	local function crashout(fov: number)
-		return 90 - fov/2
-	end
-	
-	ry = ry *  crashout(workspace.CurrentCamera.FieldOfView) / crashout(70)
-	rx = rx *  crashout(workspace.CurrentCamera.FieldOfView) / crashout(70)
-	--rz = rz *  crashout(workspace.CurrentCamera.FieldOfView) / crashout(70)
-	return CFrame.new(original.Position) * CFrame.Angles(rx,ry,rz)
-end
-
 function componentGen.new(Component2D, Screen3D)
 	local self = setmetatable(
 		{
 			enabled = false,
-			fovIndependant = false,
+			_compatibility = false,
 			
 			component2D = Component2D,
 			surfaceGui = nil,
-
+			
 			parent3D = nil,
 			screen3D = Screen3D,
 
@@ -52,6 +38,33 @@ function componentGen.new(Component2D, Screen3D)
 	end
 
 	return self
+end
+
+function componentGen:EnableCompatibility()
+	self._compatibility = true
+	
+	local Container0 , Container1 = Instance.new('Frame'), Instance.new('Frame')
+	
+	Container0.Name = '3DCONTAINER'
+	Container1.Name = '3DCONTAINER'
+	
+	Container0.Parent = self.parent2D or self.screen3D.rootGui
+	Container1.Parent = Container0
+	
+	Container0.BackgroundTransparency = 1
+	Container1.BackgroundTransparency = 1
+	
+	local Container3D_0, Container3D_1 = componentGen.new(Container0,self.screen3D), componentGen.new(Container1,self.screen3D)
+	
+	self.screen3D.partIndex[Container0], self.screen3D.partIndex[Container1] = Container3D_0, Container3D_1
+	
+	self.compatibilityParent3D = self.parent3D
+	self.compatibilityParent2D = self.parent2D
+	
+	self.parent2D = Container1
+	self.parent3D = Container3D_1
+	
+	return self:Enable()
 end
 
 function componentGen:Enable()
@@ -78,15 +91,26 @@ function componentGen:Enable()
 	self.component2D.Parent = self.surfaceGui
 
 	--self:RecomputeParent()
-
-	self.conn = RunService.RenderStepped:Connect(function(deltaTime: number)
+	
+	self.conn = game:GetService('HttpService'):GenerateGUID(false)
+	RunService:BindToRenderStep(self.conn,Enum.RenderPriority.Last.Value + 1,function(deltaTime: number)
+		
 		if self.conn and not (self.surfaceGui and surfacePart) then
-			self.conn:Disconnect()
+			RunService:UnbindFromRenderStep(self.conn)
 			return
 		end
+		
+		
 
 		local viewportSize = self:GetViewportSize()
-
+		
+		if self._compatibility and self.parent2D and self.parent3D and self.parent3D.parent2D then
+			local c_parent = self.compatibilityParent2D or self.screen3D 
+			self.parent2D.Size = UDim2.fromOffset(c_parent.AbsoluteSize.X,c_parent.AbsoluteSize.Y)
+			self.parent3D.parent2D.Size = UDim2.fromOffset(self.component2D.AbsoluteSize.X,self.component2D.AbsoluteSize.Y)
+		end
+		
+		
 		self.viewportSize = viewportSize
 
 		surfaceGui.CanvasSize = viewportSize
@@ -106,11 +130,20 @@ function componentGen:Disable()
 	self.enabled = false
 
 	if self.conn then
-		self.conn:Disconnect()
+		RunService:UnbindFromRenderStep(self.conn)
 	end
-
+	
 	if self.component2D then
-		self.component2D.Parent = self.parent2D or self.screen3D.rootGui
+		
+		if self._compatibility then
+			
+			self.component2D.Parent = self.compatibilityParent2D or self.screen3D.rootGui
+			
+		else
+			
+			self.component2D.Parent = self.parent2D or self.screen3D.rootGui
+			
+		end
 	end
 
 	if self.surfaceGui then
@@ -186,6 +219,15 @@ function componentGen:RecomputeParent()
 	return self
 end
 
+function componentGen:GetCompatibilityPosition()
+	if not self.enabled and self.component2D and self.parent3D and self.parent3D.component2D and not self.parent3D.enabled then-- everyone is say "hey yqat, add modifiers", well i made modifiers, here is my modifiers
+
+		local offset = (self.component2D.AbsolutePosition - self.parent3D.component2D.AbsolutePosition) + (self.component2D.AnchorPoint * self.component2D.AbsoluteSize)
+		return UDim2.fromOffset(offset.X, offset.Y)
+	end
+	return UDim2.new(0,0,0,0)
+end
+
 function componentGen:ReadWorldCFrame(): CFrame
 	if not self.component2D then
 		return CFrame.new()
@@ -196,7 +238,7 @@ function componentGen:ReadWorldCFrame(): CFrame
 	local originalCFrame, udimPos, addedPosition
 
 	local udimMax = self:UDim2ToCFrame(UDim2.fromScale(1,1))
-
+	
 	if self.parent3D then
 
 
@@ -209,13 +251,24 @@ function componentGen:ReadWorldCFrame(): CFrame
 		local anchorPoint = self.parent3D.component2D.AnchorPoint
 
 		originalCFrame = self.parent3D:ReadWorldCFrame()
+		
+		
+		
 		udimPos = self.parent3D.component2D.Position 
+		
+		if not self.parent3D.enabled and self.parent3D.parent3D and self.parent3D.parent3D.component2D and not self.parent3D.parent3D.enabled then 
+ 
+			udimPos  = self.parent3D:GetCompatibilityPosition()
+		end
+		
 		addedPosition = 
 			self.parent3D:UDim2ToCFrame(udimPos) 
 			* udimMax  
 			* self:UDim2ToCFrame(UDim2.fromScale(-anchorPoint.X+0.5,-anchorPoint.Y+0.5))
 			* CFrame.Angles(0,0, -math.rad(self.parent2D.Rotation) ) 
+		
 	else
+		
 		local viewportDiff = self.screen3D:GetRealCanvasSize() - self.screen3D:GetIntendedCanvasSize()
 
 		originalCFrame = workspace.CurrentCamera.CFrame * CFrame.new(0,0,-(self.screen3D.displayDistance)/2 ) * self.screen3D.rootOffset
@@ -228,21 +281,24 @@ function componentGen:ReadWorldCFrame(): CFrame
 
 
 	local finalCFrame = originalCFrame  * addedPosition
-
+	
+	local componentPosition = self.component2D.Position
+	
+	
+	if not self.enabled and self.parent3D and self.parent3D.component2D and not self.parent3D.enabled then --whoever thinks that hell should be empty has never seen THIS...
+		
+		componentPosition = self:GetCompatibilityPosition()
+	end
+	
 	local finalPivot =  
 		finalCFrame 
 		* udimMax:Inverse() 
-		* self:UDim2ToCFrame(self.component2D.Position) 
+		* self:UDim2ToCFrame(componentPosition) 
 		* udimMax
-	
-	
-	local offset = self.offset
-	
-	if self.fovIndependant then
-		offset = scaleOffFOV(offset)
-	end
 
-	return finalCFrame * pivot(finalCFrame,finalPivot, offset )
+
+
+	return finalCFrame * pivot(finalCFrame,finalPivot,self.offset) 
 end
 
 return componentGen
